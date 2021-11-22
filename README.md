@@ -32,6 +32,6 @@ And if you want to just get the data from one book, uncomment the code from the 
 * [Visual Studio Code](https://code.visualstudio.com/) - Code editor
 
 
-## Auteurs
+## Author
 Listez le(s) auteur(s) du projet ici !
 * **Hadrien Herbet** _alias_ [@herbetelem](https://github.com/herbetelem)
