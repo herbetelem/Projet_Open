@@ -1,117 +1,114 @@
-from typing import final
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
-import csv
+import function_parse as fp
+import parsing_page as pp
 
+""" Main function who will run all the function our programms will need"""
+def main():
+    category = get_info_category()
+    all_data = {
+        "product_page_url" : [],
+        "universal_product_code" : [],
+        "title" : [],
+        "price_including_tax" : [],
+        "price_excluding_tax" : [],
+        "number_available" : [],
+        "product_description" : [],
+        "category" : [],
+        "review_rating" : [],
+        "image_url" : [],
+    }
 
-def clear_tab(element, tables):
-    tables = [table.replace(element, "") for table in tables]
-    return tables
+    fp.clearConsole()
+    print("all the category have been know")
 
-def find_something(soup, balise, class_find=False):
-    if class_find:
-        result = soup.find_all(balise, class_=class_find)
-    else:
-        result = soup.find_all(balise)
-    return result
+    i = 1
+    for categ in category:
+        # call the function to get the list of book from a category
+        list_books = get_list_book_by_categ(categ)
 
-def get_info_product(link):
-    # je recupere ma page et je la met au format lisible par soup
+        o = 1
+        for book in list_books:
+            tmp_link = "http://books.toscrape.com/catalogue/" + str(book)
+            
+            # call the function to parse a specific page
+            info_book = pp.get_info_product(tmp_link)
+            
+            # store all the data into my dictionnary
+            all_data["product_page_url"].append(info_book["product_page_url"])
+            all_data["universal_product_code"].append(info_book["universal_product_code"])
+            all_data["title"].append(info_book["title"])
+            all_data["price_including_tax"].append(info_book["price_including_tax"])
+            all_data["price_excluding_tax"].append(info_book["price_excluding_tax"])
+            all_data["number_available"].append(info_book["number_available"])
+            all_data["product_description"].append(info_book["product_description"])
+            all_data["category"].append(info_book["category"])
+            all_data["review_rating"].append(info_book["review_rating"])
+            all_data["image_url"].append(info_book["image_url"])
+            
+            fp.clearConsole()
+            print("catégory " + str(i) + "/" + str(len(category)))
+            print("book " + str(o) + "/" + str(len(list_books)))
+            o = o+1
+        i = i+1
+    
+    # # export to pandas at excel format
+    dataframe = pd.DataFrame(all_data)
+    dataframe.to_excel('all_data.xlsx')
+
+""" Function who get the category's list of books from the home page """
+def get_info_category(link="http://books.toscrape.com/index.html"):
     page = requests.get(link)
     soup = BeautifulSoup(page.content, 'html.parser')
 
-    # je definit mon dico qui stockera mes valeurs
-    final_result = {
-        "product_page_url" : link,
-        "universal_product_code" : False,
-        "title" : False,
-        "price_including_tax" : False,
-        "price_excluding_tax" : False,
-        "number_available" : False,
-        "product_description" : False,
-        "category" : False,
-        "review_rating" : False,
-        "image_url" : False,
-    }
+    category = []
+    categs = fp.find_something(soup, "ul", "nav-list")
+    categs = str(categs[0]).split("<ul>")
+    del categs[0]
+    categs = categs[0]
+    categs = str(categs).split("                                ")
+    for categ in categs:
+        categ = str(categ).split("\n")
+        for line in categ:
+            if len(line) > 0 and line[0].isupper and line[0] not in ["<", ">", " "]:
+                line = line.replace("(", "")
+                line = line.replace(")", "")
+                line = line.replace("#", "")
+                line = line.replace("'", "")
+                category.append(line.replace(" ", "-"))
+    for i in range(len(category)):
+        link = "http://books.toscrape.com/catalogue/category/books/" + str(str(category[i]) + "_" + str(i + 2)).lower() + "/index.html"
+        category[i] = [category[i], link, fp.get_nb_books(link)]
+    
+    return category
 
-    # je recupere le titre et la description
-    titles = find_something(soup, "h1")
-    final_result["title"] = titles[0].string
-    description = find_something(soup, "article", "product_page")
-    description = str(description[0]).split("<p>")
-    del description[0]
-    description = str(description[0]).split("</p>")
-    del description[1]
-    final_result["product_description"] = description[0]
+""" Function who get the list of book from a cetagory specific """  
+def get_list_book_by_categ(category):
+    link = category[1]
+    nb = category[2]
+    final_list = []
 
+    # if there is more than 20 books, there is a pagination so i have to handle this
+    if nb <= 20:
+        page = requests.get(link)
+        soup = BeautifulSoup(page.content, 'html.parser')
+        lists = fp.find_something(soup, "article", "product_pod")
+        for lane in lists:
+            final_list.append(fp.parse_lane_for_categ(lane))
+    else:
+        nb_tmp = nb
+        i = 1
+        # with this 'while' i can read the all page
+        while nb_tmp > 0:
+            nb_tmp = nb_tmp - 20
+            link_tmp = link.replace("index.html", "page-" + str(i) + ".html")
+            i = i + 1
+            page = requests.get(link_tmp)
+            soup = BeautifulSoup(page.content, 'html.parser')
+            lists = fp.find_something(soup, "article", "product_pod")
+            for lane in lists:
+                final_list.append(fp.parse_lane_for_categ(lane))
+    return final_list
 
-    # je recupere les infos qui proviennent du tableau
-    tables = find_something(soup, "table", "table-striped")
-    tables = str(tables[0]).split("<tr>")
-
-    del tables[0]
-
-    tables = clear_tab("</tr>", tables)
-    tables = clear_tab("\n", tables)
-
-    for i in range(len(tables)):
-        tables[i] = tables[i].split("><")
-        del tables[i][0]
-        tables[i] = tables[i][0]
-
-    tables = clear_tab("</td>", tables)
-    tables = clear_tab("td>", tables)
-    tables = clear_tab("</td", tables)
-
-    final_result["universal_product_code"] = tables[0]
-    final_result["price_excluding_tax"] = tables[2]
-    final_result["price_including_tax"] = tables[3]
-    final_result["number_available"] = tables[5]
-
-    # je recupere l'image
-    img = find_something(soup, "div", "item active")
-    img = str(img[0]).split('src="')
-    del img[0]
-    img = clear_tab('"/>\n</div>', img)
-    img = clear_tab('../../', img)
-    final_result["image_url"] = "http://books.toscrape.com/" + img[0]
-
-    #je recupere la note
-    note = find_something(soup, "p", "star-rating")
-    note = str(note[0]).split(">")
-    note = note[0].split(" ")
-    note = note[2].replace('"', '')
-    final_result["review_rating"] = note
-
-    # je recupere la catégorie
-    categ = find_something(soup, "ul", "breadcrumb")
-    categ = str(categ[0]).split("<li>")
-    categ = categ[3].split('">')
-    categ = categ[1]
-    categ = categ.split("</a>")
-    categ = categ[0]
-    final_result["category"] = categ
-
-    # exporter en csv
-    # en_tete = ["product_page_url", "universal_product_code", "title", "price_including_tax", "price_excluding_tax", "number_available", "product_description", "category", "review_rating", "image_url"]
-    # with open('data.csv', 'w') as fichier_csv:
-    #     writer = csv.writer(fichier_csv, delimiter=',')
-    #     writer.writerow(en_tete)
-    #     ligne = []
-    #     for key, value in final_result.items():
-    #         ligne.append(value)
-    #     writer.writerow(ligne)
-
-    # # exporter en pandas
-    for key, value in final_result.items():
-        final_result[key] = [value]
-    dataframe= pd.DataFrame(final_result)
-    dataframe.to_excel('test.xlsx')
-    return True
-
-def get_info_category(link):
-    return True
-
-
-get_info_product("http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html")
+main()
